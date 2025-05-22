@@ -34,6 +34,7 @@
 #define VELODYNE_DRIVER__TIME_CONVERSION_HPP_
 
 #include <rclcpp/time.hpp>
+#include <fstream>
 
 /** @brief Function used to check that hour assigned to timestamp in conversion is
  * correct. Velodyne only returns time since the top of the hour, so if the computer clock
@@ -46,25 +47,36 @@
  * disagree by more than a half-hour.
  */
 inline
-rclcpp::Time resolveHourAmbiguity(const rclcpp::Time & stamp, const rclcpp::Time & nominal_stamp)
+rclcpp::Time resolveHourAmbiguity(rclcpp::Node * private_nh_, const rclcpp::Time & stamp, const rclcpp::Time & nominal_stamp)
 {
   const int HALFHOUR_TO_SEC = 1800;
   rclcpp::Time retval = stamp;
+  int debug_val = 0; 
 
   if (nominal_stamp.seconds() > stamp.seconds()) {
     if (nominal_stamp.seconds() - stamp.seconds() > HALFHOUR_TO_SEC) {
       retval = rclcpp::Time(retval.seconds() + 2 * HALFHOUR_TO_SEC);
+
+      debug_val = 1; 
     }
   } else if (stamp.seconds() - nominal_stamp.seconds() > HALFHOUR_TO_SEC) {
     retval = rclcpp::Time(retval.seconds() - 2 * HALFHOUR_TO_SEC);
+
+    debug_val = -1; 
   }
+
+  // Log debug info
+  RCLCPP_INFO(private_nh_->get_logger(),
+    "resolveHourAmbiguity → debug_val: %d",
+    debug_val);
 
   return retval;
 }
-
+// This function *focus 
 inline
-rclcpp::Time rosTimeFromGpsTimestamp(rclcpp::Time & time_nom, const uint8_t * const data)
+rclcpp::Time rosTimeFromGpsTimestamp(rclcpp::Node * private_nh_, rclcpp::Time & time_nom, const uint8_t * const data)
 {
+  
   // time_nom is used to recover the hour
   const int HOUR_TO_SEC = 3600;
   // time for each packet is a 4 byte uint
@@ -75,11 +87,35 @@ rclcpp::Time rosTimeFromGpsTimestamp(rclcpp::Time & time_nom, const uint8_t * co
       ((uint32_t) data[2]) << 16 |
       ((uint32_t) data[1]) << 8 |
       ((uint32_t) data[0]));
-  uint32_t cur_hour = time_nom.nanoseconds() / 1000000000 / HOUR_TO_SEC;
+
+  // Error is most likely here where it calcs current hour.
+  uint32_t cur_hour_seg1 =  time_nom.nanoseconds() / 1000000000;
+  uint32_t cur_hour = cur_hour_seg1 / HOUR_TO_SEC;
+  
+  double stamp_seg1 = cur_hour * HOUR_TO_SEC;
+  double stamp_seg2 = usecs / 1000000;
+  double stamp_seg3 = (usecs % 1000000) * 1000;
+
   auto stamp = rclcpp::Time(
-    (cur_hour * HOUR_TO_SEC) + (usecs / 1000000),
-    (usecs % 1000000) * 1000);
-  return resolveHourAmbiguity(stamp, time_nom);
+    (stamp_seg1) + (stamp_seg2),
+    stamp_seg3);
+
+  rclcpp::Time retval = resolveHourAmbiguity(private_nh_ ,stamp, time_nom);
+
+  RCLCPP_INFO(private_nh_->get_logger(),
+    "rosTimeFromGpsTimestamp → usecs: %u, cur_hour_seg1: %u, cur_hour: %u, stamp_seg1: %.0f, stamp_seg2: %.6f, stamp_seg3: %.0f, stamp: %.6f, retval: %.6f",
+    static_cast<unsigned int>(usecs),
+    static_cast<unsigned int>(cur_hour_seg1),
+    static_cast<unsigned int>(cur_hour),
+    stamp_seg1,
+    stamp_seg2,
+    stamp_seg3,
+    stamp.seconds(),
+    retval.seconds());
+
+  RCLCPP_INFO(private_nh_->get_logger(), "");
+    
+  return retval;
 }
 
 #endif  // VELODYNE_DRIVER__TIME_CONVERSION_HPP_

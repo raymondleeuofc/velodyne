@@ -210,7 +210,7 @@ int InputSocket::getPacket(velodyne_msgs::msg::VelodynePacket * pkt, const doubl
         return -1;
       }
     } while ((fds[0].revents & POLLIN) == 0);
-
+    // Start data burst - get time 1 (ROS2)
     time1 = private_nh_->get_clock()->now();
 
     // Receive packets that should now be available from the
@@ -242,7 +242,7 @@ int InputSocket::getPacket(velodyne_msgs::msg::VelodynePacket * pkt, const doubl
       private_nh_->get_logger(),
       "incomplete Velodyne packet read: %zd bytes", nbytes);
   }
-
+  // Get data time capture (ROS2)
   rclcpp::Time time2 = private_nh_->get_clock()->now();
   if (!gps_time_) {
     // Average the times at which we begin and end reading.  Use that to
@@ -252,7 +252,8 @@ int InputSocket::getPacket(velodyne_msgs::msg::VelodynePacket * pkt, const doubl
     // time for each packet is a 4 byte uint located starting at offset 1200 in
     // the data packet
     // TODO(clalancette): What if the packet is shorter than 1204 bytes?
-    pkt->stamp = rosTimeFromGpsTimestamp(time2, &(pkt->data[1200]));
+    // From ROS2 time get hours, then compensate for the microseconds timer from velodyne
+    pkt->stamp = rosTimeFromGpsTimestamp(private_nh_, time2, &(pkt->data[1200]));
   }
 
   return 0;
